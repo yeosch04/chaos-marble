@@ -1,0 +1,1305 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>카오스 마블 - 인게임</title>
+    <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body, html {
+            width: 100%;
+            height: 100%;
+            font-family: 'Jua', sans-serif;
+            background: radial-gradient(circle at center, #f2ffc2 0%, #a8e063 100%);
+            overflow: hidden;
+            color: #2c3e50;
+        }
+
+        /* 상단 미니 헤더 */
+        .top-hud {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 52px;
+            background: rgba(255, 255, 255, 0.84);
+            backdrop-filter: blur(6px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 18px;
+            z-index: 20;
+        }
+
+        .hud-left-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .room-pill {
+            background: #fffaf0;
+            border: 2.5px solid #e74c3c;
+            color: #c0392b;
+            padding: 3px 12px;
+            border-radius: 12px;
+            font-size: 17px;
+        }
+
+        .turn-banner {
+            background: #fef9e7;
+            border: 2.5px solid #f39c12;
+            color: #b7950b;
+            padding: 3px 14px;
+            border-radius: 12px;
+            font-size: 16px;
+        }
+
+        .lobby-back-btn {
+            background: #e74c3c;
+            color: #fff;
+            border: none;
+            border-radius: 11px;
+            padding: 6px 14px;
+            font-family: 'Jua', sans-serif;
+            font-size: 15px;
+            cursor: pointer;
+            box-shadow: 0 3px 0 #c0392b;
+        }
+        .lobby-back-btn:active {
+            transform: translateY(2px);
+            box-shadow: none;
+        }
+
+        /* 3단 메인 인게임 레이아웃 (비어있는 공간 최소화 + 영역 간 침범 방지) */
+        .game-layout {
+            width: 100vw;
+            height: calc(100vh - 52px);
+            margin-top: 52px;
+            padding: 10px 12px;
+            display: grid;
+            grid-template-columns: 296px minmax(0, 1fr) 328px;
+            gap: 10px;
+            align-items: stretch;
+            overflow: hidden;
+        }
+
+        /* 좌측: 다른 플레이어 영역 */
+        .opponents-column {
+            height: 100%;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow: hidden;
+        }
+
+        .panel-section-title {
+            font-size: 16px;
+            color: #1e8449;
+            background: rgba(255, 255, 255, 0.85);
+            padding: 6px 10px;
+            border-radius: 11px;
+            border: 2px solid #2ecc71;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .opponents-cards-wrap {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow-y: auto;
+        }
+
+        .opponent-card {
+            flex: 1;
+            min-height: 128px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 2.5px solid #bdc3c7;
+            border-radius: 16px;
+            padding: 11px 13px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 6px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .opponent-card.active-turn {
+            border-color: #f39c12;
+            box-shadow: 0 0 0 2px rgba(243, 156, 18, 0.4), 0 6px 12px rgba(0, 0, 0, 0.12);
+        }
+
+        .player-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+        }
+
+        .player-identity {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .pawn-badge {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 2.5px solid #ffffff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 14px;
+        }
+
+        .player-name-text {
+            font-size: 19px;
+            color: #2c3e50;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .order-pill {
+            background: #ecf0f1;
+            color: #566573;
+            border: 2px solid #bdc3c7;
+            border-radius: 9px;
+            padding: 2px 8px;
+            font-size: 13px;
+            flex-shrink: 0;
+        }
+
+        .money-box {
+            background: #fef9e7;
+            border: 2px solid #f7dc6f;
+            border-radius: 11px;
+            padding: 6px 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .money-label {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+
+        .money-value {
+            color: #d35400;
+            font-size: 19px;
+        }
+
+        /* 상대방 비공개 증강 슬롯 (실버/골드/프리즘 색상만 표시) */
+        .secret-augments-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .secret-aug-label {
+            font-size: 14px;
+            color: #7f8c8d;
+            margin-right: 2px;
+        }
+
+        .secret-aug-chip {
+            width: 36px;
+            height: 44px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 17px;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.14);
+        }
+
+        .secret-aug-chip.silver {
+            background: linear-gradient(135deg, #f8f9f9 0%, #bdc3c7 100%);
+            border: 2.5px solid #7f8c8d;
+            color: #2c3e50;
+        }
+
+        .secret-aug-chip.gold {
+            background: linear-gradient(135deg, #fff59d 0%, #fbc02d 60%, #f57f17 100%);
+            border: 2.5px solid #d4ac0d;
+            color: #6e5200;
+        }
+
+        .secret-aug-chip.prism {
+            background: linear-gradient(135deg, #ffb6d9 0%, #ff69b4 55%, #d7bde2 100%);
+            border: 2.5px solid #ff1493;
+            color: #ffffff;
+            text-shadow: 0 1px 2px rgba(108, 29, 69, 0.85);
+        }
+
+        .empty-aug-hint {
+            font-size: 13px;
+            color: #95a5a6;
+        }
+
+        /* 중앙: 보드판 영역 (다른 영역 침범 방지) */
+        .board-center-stage {
+            width: 100%;
+            height: 100%;
+            min-width: 0;
+            min-height: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        #phaser-game-container {
+            border-radius: 18px;
+            overflow: hidden;
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+            border: 3.5px solid #ffffff;
+            flex-shrink: 0;
+        }
+
+        /* 우측: 나의 영역 + 주사위 + 증강 보관함 */
+        .my-column {
+            height: 100%;
+            min-width: 0;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow: hidden;
+        }
+
+        .my-profile-card {
+            background: #ffffff;
+            border: 3px solid #3498db;
+            border-radius: 16px;
+            padding: 12px 14px;
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .my-badge-tag {
+            background: #3498db;
+            color: #ffffff;
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 8px;
+            flex-shrink: 0;
+        }
+
+        .my-money-box {
+            background: linear-gradient(135deg, #fff9db 0%, #fdebd0 100%);
+            border: 2px solid #f39c12;
+            border-radius: 12px;
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .my-money-value {
+            font-size: 24px;
+            color: #c0392b;
+        }
+
+        /* 주사위 굴리기 영역 */
+        .dice-panel {
+            background: rgba(255, 255, 255, 0.96);
+            border: 3px solid #e67e22;
+            border-radius: 16px;
+            padding: 12px 14px;
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 9px;
+            flex-shrink: 0;
+        }
+
+        .dice-panel-title {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 17px;
+            color: #d35400;
+        }
+
+        .dice-tray {
+            width: 100%;
+            background: #fef5e7;
+            border: 2px dashed #f5b041;
+            border-radius: 12px;
+            padding: 11px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .die-box {
+            width: 62px;
+            height: 62px;
+            background: #ffffff;
+            border: 3px solid #2c3e50;
+            border-radius: 14px;
+            box-shadow: 0 5px 0 #bdc3c7;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 31px;
+            color: #2c3e50;
+        }
+
+        .roll-dice-btn {
+            width: 100%;
+            background: linear-gradient(180deg, #ff7675 0%, #e74c3c 100%);
+            color: #ffffff;
+            border: none;
+            border-radius: 13px;
+            padding: 11px;
+            font-family: 'Jua', sans-serif;
+            font-size: 20px;
+            cursor: pointer;
+            box-shadow: 0 4px 0 #c0392b;
+            transition: transform 0.1s;
+        }
+
+        .roll-dice-btn:hover {
+            filter: brightness(1.04);
+        }
+
+        .roll-dice-btn:active {
+            transform: translateY(3px);
+            box-shadow: 0 1px 0 #c0392b;
+        }
+
+        .roll-dice-btn:disabled {
+            background: #bdc3c7;
+            box-shadow: 0 4px 0 #95a5a6;
+            cursor: not-allowed;
+        }
+
+        /* 내 증강 카드 보관함 영역 */
+        .my-augments-panel {
+            flex: 1;
+            min-height: 150px;
+            background: rgba(255, 255, 255, 0.96);
+            border: 3px solid #9b59b6;
+            border-radius: 16px;
+            padding: 12px 14px;
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow: hidden;
+        }
+
+        .aug-vault-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 17px;
+            color: #6c3483;
+            flex-shrink: 0;
+        }
+
+        .aug-cards-list {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .my-aug-card {
+            border-radius: 12px;
+            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        }
+
+        .my-aug-card.silver {
+            background: linear-gradient(135deg, #ffffff 0%, #e5e7e9 100%);
+            border: 2.5px solid #95a5a6;
+        }
+
+        .my-aug-card.gold {
+            background: linear-gradient(135deg, #fffde7 0%, #ffe082 100%);
+            border: 2.5px solid #d4ac0d;
+        }
+
+        .my-aug-card.prism {
+            background: linear-gradient(135deg, #ffe6f2 0%, #ffb6d9 60%, #e8daef 100%);
+            border: 2.5px solid #ff69b4;
+        }
+
+        .my-aug-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .my-aug-name {
+            font-size: 16px;
+            color: #2c3e50;
+        }
+
+        .my-aug-tier-tag {
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.88);
+            color: #34495e;
+        }
+
+        .my-aug-desc {
+            font-size: 13px;
+            color: #4d5656;
+            line-height: 1.35;
+        }
+    </style>
+</head>
+<body>
+    <header class="top-hud">
+        <div class="hud-left-group">
+            <div class="room-pill" id="hud-room-code">ROOM: -</div>
+            <div class="turn-banner" id="hud-turn-status">게임 준비 완료 · UI 배치 모드</div>
+        </div>
+        <button class="lobby-back-btn" onclick="returnToLobby()">나가기</button>
+    </header>
+
+    <main class="game-layout">
+        <!-- 좌측: 본인을 제외한 다른 플레이어 영역 (최대 3개) -->
+        <aside class="opponents-column" id="opponents-container">
+            <div class="panel-section-title">상대 플레이어 현황</div>
+        </aside>
+
+        <!-- 중앙: 9x9 카오스 마블 보드판 -->
+        <section class="board-center-stage" id="board-center-stage">
+            <div id="phaser-game-container"></div>
+        </section>
+
+        <!-- 우측: 나의 영역 + 주사위 굴리기 + 증강 카드 보관함 -->
+        <aside class="my-column">
+            <!-- 1. 나의 영역 -->
+            <section class="my-profile-card" id="my-profile-card">
+                <div class="player-header-row">
+                    <div class="player-identity">
+                        <span class="pawn-badge" id="my-pawn-badge" style="background:#e74c3c;">1</span>
+                        <span class="player-name-text" id="my-name-display">플레이어</span>
+                        <span class="my-badge-tag">나</span>
+                    </div>
+                    <span class="order-pill" id="my-order-display">1순서</span>
+                </div>
+                <div class="my-money-box">
+                    <span class="money-label">보유 자금</span>
+                    <span class="my-money-value" id="my-money-display">300만</span>
+                </div>
+            </section>
+
+            <!-- 2. 주사위 굴리는 영역 -->
+            <section class="dice-panel">
+                <div class="dice-panel-title">
+                    <span>🎲 주사위 컨트롤</span>
+                    <span id="dice-sum-label" style="font-size:14px; color:#7f8c8d;">대기 중</span>
+                </div>
+                <div class="dice-tray">
+                    <div class="die-box" id="die-1">?</div>
+                    <div class="die-box" id="die-2">?</div>
+                </div>
+                <button class="roll-dice-btn" id="btn-roll-dice" type="button">주사위 굴리기</button>
+            </section>
+
+            <!-- 3. 내 증강 카드 보관함 -->
+            <section class="my-augments-panel">
+                <div class="aug-vault-header">
+                    <span>✨ 내 증강 카드 보관함</span>
+                    <span id="my-aug-count" style="font-size:14px; color:#8e44ad;">0장</span>
+                </div>
+                <div class="aug-cards-list" id="my-augments-list"></div>
+            </section>
+        </aside>
+    </main>
+
+    <script>
+        const SERVER_URL = sessionStorage.getItem('chaosMarbleServerUrl') || 'http://localhost:3000';
+        const roomCode = sessionStorage.getItem('chaosMarbleRoomCode') || 'TEST';
+        const myNickname = sessionStorage.getItem('chaosMarbleNickname') || '플레이어';
+        const savedPlayers = JSON.parse(sessionStorage.getItem('chaosMarblePlayers') || '[]');
+
+        const PLAYER_COLORS = [
+            { hex: '#e74c3c', name: '빨강' },
+            { hex: '#3498db', name: '파랑' },
+            { hex: '#2ecc71', name: '초록' },
+            { hex: '#9b59b6', name: '보라' }
+        ];
+
+        const AUGMENT_TIER_LABEL = {
+            silver: '실버',
+            gold: '골드',
+            prism: '프리즘'
+        };
+
+        document.getElementById('hud-room-code').innerText = `ROOM: ${roomCode}`;
+
+        function createInitialGamePlayers(rawPlayers) {
+            const baseList = rawPlayers.length > 0
+                ? rawPlayers
+                : [
+                    { name: myNickname, isHost: true },
+                    { name: '민수', isHost: false },
+                    { name: '지훈', isHost: false },
+                    { name: '현우', isHost: false }
+                ];
+
+            return baseList.map((p, idx) => ({
+                name: p.name,
+                isHost: !!p.isHost,
+                order: idx + 1,
+                colorHex: PLAYER_COLORS[idx % PLAYER_COLORS.length].hex,
+                money: 300,
+                augments: idx === 0
+                    ? [
+                        { tier: 'gold', name: '황금 주사위', desc: '더블이 나올 때마다 보너스 +30만 원을 획득합니다.' },
+                        { tier: 'prism', name: '혼돈의 부동산왕', desc: '내 땅 통행료가 1.5배 증가하고 인수 비용이 20% 비싸집니다.' }
+                    ]
+                    : idx === 1
+                        ? [{ tier: 'silver' }, { tier: 'gold' }]
+                        : idx === 2
+                            ? [{ tier: 'prism' }]
+                            : []
+            }));
+        }
+
+        let gamePlayers = createInitialGamePlayers(savedPlayers);
+        let currentTurnOrder = 1;
+
+        function renderSidePanels(players) {
+            const me = players.find((p) => p.name === myNickname) || players[0];
+            const opponents = players.filter((p) => p !== me).slice(0, 3);
+
+            const myBadge = document.getElementById('my-pawn-badge');
+            myBadge.style.background = me.colorHex;
+            myBadge.innerText = me.order;
+
+            document.getElementById('my-profile-card').style.borderColor = me.colorHex;
+            document.getElementById('my-name-display').innerText = `${me.name}${me.isHost ? ' (방장)' : ''}`;
+            document.getElementById('my-order-display').innerText = `${me.order}순서`;
+            document.getElementById('my-money-display').innerText = `${me.money.toLocaleString()}만`;
+
+            const myAugListEl = document.getElementById('my-augments-list');
+            document.getElementById('my-aug-count').innerText = `${me.augments.length}장`;
+
+            if (me.augments.length === 0) {
+                myAugListEl.innerHTML = `<div class="empty-aug-hint" style="text-align:center; padding:24px 0;">보유 중인 증강 카드가 없습니다.</div>`;
+            } else {
+                myAugListEl.innerHTML = me.augments.map((aug) => `
+                    <div class="my-aug-card ${aug.tier}">
+                        <div class="my-aug-top">
+                            <span class="my-aug-name">${aug.name || '미확인 증강'}</span>
+                            <span class="my-aug-tier-tag">${AUGMENT_TIER_LABEL[aug.tier] || '증강'}</span>
+                        </div>
+                        <div class="my-aug-desc">${aug.desc || '증강 효과가 여기에 표시됩니다.'}</div>
+                    </div>
+                `).join('');
+            }
+
+            const oppContainer = document.getElementById('opponents-container');
+            const cardsHtml = opponents.map((opp) => {
+                const isTurn = opp.order === currentTurnOrder;
+                const secretAugsHtml = opp.augments.length > 0
+                    ? opp.augments.map((aug) => `
+                        <div class="secret-aug-chip ${aug.tier}" title="${AUGMENT_TIER_LABEL[aug.tier]} 증강 (비공개)">?</div>
+                    `).join('')
+                    : `<span class="empty-aug-hint">없음</span>`;
+
+                return `
+                    <article class="opponent-card ${isTurn ? 'active-turn' : ''}" style="border-left: 8px solid ${opp.colorHex};">
+                        <div class="player-header-row">
+                            <div class="player-identity">
+                                <span class="pawn-badge" style="background:${opp.colorHex};">${opp.order}</span>
+                                <span class="player-name-text">${opp.name}</span>
+                            </div>
+                            <span class="order-pill">${opp.order}순서</span>
+                        </div>
+                        <div class="money-box">
+                            <span class="money-label">보유 자금</span>
+                            <span class="money-value">${opp.money.toLocaleString()}만</span>
+                        </div>
+                        <div class="secret-augments-row">
+                            <span class="secret-aug-label">증강:</span>
+                            ${secretAugsHtml}
+                        </div>
+                    </article>
+                `;
+            }).join('');
+
+            oppContainer.innerHTML = `
+                <div class="panel-section-title">상대 플레이어 (${opponents.length}명)</div>
+                <div class="opponents-cards-wrap">
+                    ${cardsHtml || '<div class="opponent-card"><span class="empty-aug-hint">참여한 다른 플레이어가 없습니다.</span></div>'}
+                </div>
+            `;
+        }
+
+        renderSidePanels(gamePlayers);
+
+        const socket = io(SERVER_URL);
+        socket.on('connect', () => {
+            if (roomCode !== 'TEST') {
+                socket.emit('joinGameSession', { roomCode, nickname: myNickname });
+            }
+        });
+
+        socket.on('gameSessionSynced', ({ players }) => {
+            if (players && players.length > 0) {
+                gamePlayers = createInitialGamePlayers(players);
+                renderSidePanels(gamePlayers);
+            }
+        });
+
+        function returnToLobby() {
+            window.location.href = 'index.html';
+        }
+
+        // 9x9 외곽 32칸 좌표 정의
+        const CORNERS = {
+            START:    { x: 0, y: 0, cornerKey: 'start',    label: '출발',       color: 0x2ecc71, border: 0x1e8449 },
+            DOOR:     { x: 0, y: 8, cornerKey: 'door',     label: '어디로든문', color: 0xd6eaf8, border: 0x2980b9 },
+            ROULETTE: { x: 8, y: 8, cornerKey: 'roulette', label: '카오스룰렛', color: 0x2c3e50, border: 0x8e44ad },
+            JAIL:     { x: 8, y: 0, cornerKey: 'jail',     label: '감옥',       color: 0xe5e7e9, border: 0x2c3e50 }
+        };
+
+        const AUGMENT_TILES = {
+            '6,0': { tier: 'silver', label: '실버\n증강', border: 0x95a5a6, textColor: '#2c3e50' },
+            '8,3': { tier: 'silver', label: '실버\n증강', border: 0x95a5a6, textColor: '#2c3e50' },
+            '0,7': { tier: 'silver', label: '실버\n증강', border: 0x95a5a6, textColor: '#2c3e50' },
+            '8,5': { tier: 'gold',   label: '골드\n증강', border: 0xd4ac0d, textColor: '#6e5200' },
+            '4,8': { tier: 'gold',   label: '골드\n증강', border: 0xd4ac0d, textColor: '#6e5200' },
+            '0,3': { tier: 'prism',  label: '프리즘\n증강', border: 0xff69b4, textColor: '#6c1d45' }
+        };
+
+        const PROPERTY_TILES = {
+            '1,0': { city: '방콕',       landmark: '왓아룬',     icon: 'wat_arun',     color: 0xfdebd0, border: 0xe67e22, price: 40 },
+            '2,0': { city: '하노이',     landmark: '하롱베이',   icon: 'halong_rock',  color: 0xd4efdf, border: 0x27ae60, price: 47 },
+            '3,0': { city: '마닐라',     landmark: '인트라무로스', icon: 'fort_arch',    color: 0xfdebd0, border: 0xe67e22, price: 52 },
+            '4,0': { city: '자카르타',   landmark: '모나스',     icon: 'monas_tower',  color: 0xfadbd8, border: 0xe74c3c, price: 61 },
+            '5,0': { city: '쿠알라',     landmark: '페트로나스', icon: 'twin_towers',  color: 0xd6eaf8, border: 0x2980b9, price: 67 },
+            '7,0': { city: '도쿄',       landmark: '도쿄타워',   icon: 'tokyo_tower',  color: 0xfadbd8, border: 0xe74c3c, price: 76 },
+
+            '8,1': { city: '베이징',     landmark: '자금성',     icon: 'palace_gate',  color: 0xf9e79f, border: 0xd4ac0d, price: 82 },
+            '8,2': { city: '타이베이',   landmark: '타이베이101', icon: 'taipei_101',   color: 0xd6eaf8, border: 0x2980b9, price: 91 },
+            '8,4': { city: '싱가포르',   landmark: '마리나베이', icon: 'marina_bay',   color: 0xd4efdf, border: 0x27ae60, price: 96 },
+            '8,6': { city: '홍콩',       landmark: '빅토리아피크', icon: 'peak_tower',   color: 0xe8daef, border: 0x8e44ad, price: 105 },
+            '8,7': { city: '시드니',     landmark: '오페라하우스', icon: 'opera_house',  color: 0xd6eaf8, border: 0x2980b9, price: 112 },
+
+            '7,8': { city: '카이로',     landmark: '피라미드',   icon: 'pyramid',      color: 0xf9e79f, border: 0xd4ac0d, price: 118 },
+            '6,8': { city: '두바이',     landmark: '부르즈할리파', icon: 'burj_spire',   color: 0xfdebd0, border: 0xe67e22, price: 127 },
+            '5,8': { city: '이스탄불',   landmark: '블루모스크', icon: 'mosque_dome',  color: 0xd6eaf8, border: 0x2980b9, price: 132 },
+            '3,8': { city: '파리',       landmark: '에펠탑',     icon: 'eiffel_tower', color: 0xfadbd8, border: 0xe74c3c, price: 141 },
+            '2,8': { city: '로마',       landmark: '콜로세움',   icon: 'colosseum',    color: 0xfdebd0, border: 0xe67e22, price: 149 },
+            '1,8': { city: '런던',       landmark: '빅벤',       icon: 'big_ben',      color: 0xe8daef, border: 0x8e44ad, price: 155 },
+
+            '0,6': { city: '바르셀로나', landmark: '사그라다',   icon: 'sagrada',      color: 0xf9e79f, border: 0xd4ac0d, price: 163 },
+            '0,5': { city: '마드리드',   landmark: '왕궁',       icon: 'royal_palace', color: 0xfadbd8, border: 0xe74c3c, price: 171 },
+            '0,4': { city: '뉴욕',       landmark: '자유의여신', icon: 'liberty',      color: 0xd4efdf, border: 0x27ae60, price: 177 },
+            '0,2': { city: '리우',       landmark: '예수상',     icon: 'christ_statue',color: 0xd6eaf8, border: 0x2980b9, price: 185 },
+            '0,1': { city: '멕시코시티', landmark: '소칼로',     icon: 'aztec_step',   color: 0xd4efdf, border: 0x27ae60, price: 193 }
+        };
+
+        function buildOuterTiles32() {
+            const tiles = [];
+            for (let y = 0; y <= 8; y++) tiles.push({ index: tiles.length, x: 0, y });
+            for (let x = 1; x <= 8; x++) tiles.push({ index: tiles.length, x, y: 8 });
+            for (let y = 7; y >= 0; y--) tiles.push({ index: tiles.length, x: 8, y });
+            for (let x = 7; x >= 1; x--) tiles.push({ index: tiles.length, x, y: 0 });
+
+            return tiles.map((tile) => {
+                if (tile.x === 0 && tile.y === 0) return { ...tile, type: 'corner', ...CORNERS.START };
+                if (tile.x === 0 && tile.y === 8) return { ...tile, type: 'corner', ...CORNERS.DOOR };
+                if (tile.x === 8 && tile.y === 8) return { ...tile, type: 'corner', ...CORNERS.ROULETTE };
+                if (tile.x === 8 && tile.y === 0) return { ...tile, type: 'corner', ...CORNERS.JAIL };
+
+                const key = `${tile.x},${tile.y}`;
+                const aug = AUGMENT_TILES[key];
+                if (aug) {
+                    return { ...tile, type: 'augment', ...aug };
+                }
+
+                const prop = PROPERTY_TILES[key];
+                if (prop) {
+                    return { ...tile, type: 'property', ...prop, owner: null, level: 0 };
+                }
+
+                return {
+                    ...tile,
+                    type: 'normal',
+                    label: key,
+                    color: 0xfef9e7,
+                    border: 0xd4ac0d,
+                    textColor: '#7f8c8d'
+                };
+            });
+        }
+
+        function drawStartLeftArrow(scene, cx, arrowY, cellSize) {
+            const g = scene.add.graphics();
+            const s = (v) => v * (cellSize / 78);
+
+            const shaftHalfLen = s(12);
+            const shaftH = s(3.6);
+            const headW = s(7);
+            const headH = s(6.5);
+
+            g.fillStyle(0xffffff, 1);
+            g.fillTriangle(
+                cx - shaftHalfLen - headW, arrowY,
+                cx - shaftHalfLen, arrowY - headH,
+                cx - shaftHalfLen, arrowY + headH
+            );
+            g.fillRoundedRect(cx - shaftHalfLen, arrowY - shaftH / 2, shaftHalfLen + s(10), shaftH, s(1.5));
+
+            g.lineStyle(s(1.4), 0x1e8449, 1);
+            g.strokeTriangle(
+                cx - shaftHalfLen - headW, arrowY,
+                cx - shaftHalfLen, arrowY - headH,
+                cx - shaftHalfLen, arrowY + headH
+            );
+        }
+
+        function drawCornerGraphic(scene, cornerKey, cx, cy, cellSize) {
+            const g = scene.add.graphics();
+            const s = (v) => v * (cellSize / 78);
+
+            if (cornerKey === 'jail') {
+                const w = s(40);
+                const h = s(36);
+
+                g.fillStyle(0x1c2833, 1);
+                g.fillRoundedRect(cx - w / 2, cy - h / 2, w, h, s(4));
+
+                g.fillStyle(0x7f8c8d, 1);
+                g.fillRect(cx - w / 2, cy - h / 2, w, s(4));
+                g.fillRect(cx - w / 2, cy + h / 2 - s(4), w, s(4));
+
+                const barCount = 5;
+                for (let i = 0; i < barCount; i++) {
+                    const bx = cx - w / 2 + s(4) + i * ((w - s(8)) / (barCount - 1)) - s(1.8);
+                    g.fillStyle(i % 2 === 0 ? 0xd5dbdb : 0xa6acaf, 1);
+                    g.fillRect(bx, cy - h / 2, s(3.6), h);
+                }
+
+                g.fillStyle(0x566573, 1);
+                g.fillRect(cx - w / 2 + s(2), cy - s(1.5), w - s(4), s(3));
+                g.fillStyle(0xf1c40f, 1);
+                g.fillRoundedRect(cx - s(4.5), cy - s(3.5), s(9), s(8), s(2));
+                g.fillStyle(0x2c3e50, 1);
+                g.fillCircle(cx, cy + s(0.5), s(1.5));
+
+                g.lineStyle(s(2.4), 0x2c3e50, 1);
+                g.strokeRoundedRect(cx - w / 2, cy - h / 2, w, h, s(4));
+            } else if (cornerKey === 'roulette') {
+                const r = s(20);
+                const sliceColors = [0xe74c3c, 0xf1c40f, 0x2ecc71, 0x3498db, 0x9b59b6, 0xe67e22, 0x1abc9c, 0xff69b4];
+                const step = (Math.PI * 2) / sliceColors.length;
+
+                sliceColors.forEach((col, i) => {
+                    g.fillStyle(col, 1);
+                    g.beginPath();
+                    g.moveTo(cx, cy);
+                    g.arc(cx, cy, r, i * step, (i + 1) * step, false);
+                    g.closePath();
+                    g.fillPath();
+                });
+
+                g.lineStyle(s(2.2), 0xffffff, 1);
+                g.strokeCircle(cx, cy, r);
+                g.fillStyle(0xf1c40f, 1);
+                g.fillCircle(cx, cy, s(5.2));
+                g.lineStyle(s(1.6), 0x2c3e50, 1);
+                g.strokeCircle(cx, cy, s(5.2));
+
+                g.fillStyle(0xffeb3b, 1);
+                g.fillTriangle(cx, cy - r + s(4), cx - s(4.5), cy - r - s(4), cx + s(4.5), cy - r - s(4));
+                g.lineStyle(s(1.4), 0xc0392b, 1);
+                g.strokeTriangle(cx, cy - r + s(4), cx - s(4.5), cy - r - s(4), cx + s(4.5), cy - r - s(4));
+            } else if (cornerKey === 'door') {
+                const w = s(28);
+                const h = s(38);
+                g.fillStyle(0xff69b4, 1);
+                g.fillRoundedRect(cx - w / 2 - s(2.5), cy - h / 2 - s(2), w + s(5), h + s(4), s(4));
+                g.fillStyle(0xff85c0, 1);
+                g.fillRect(cx - w / 2, cy - h / 2 + s(1), w, h - s(2));
+                g.lineStyle(s(1.6), 0xc2185b, 1);
+                g.strokeRect(cx - w / 2 + s(3.5), cy - h / 2 + s(4.5), w - s(7), h * 0.35);
+                g.strokeRect(cx - w / 2 + s(3.5), cy + s(2.5), w - s(7), h * 0.35);
+                g.fillStyle(0xf1c40f, 1);
+                g.fillCircle(cx + w / 2 - s(5.5), cy + s(1), s(2.8));
+                g.lineStyle(s(1.1), 0xb7950b, 1);
+                g.strokeCircle(cx + w / 2 - s(5.5), cy + s(1), s(2.8));
+            }
+        }
+
+        function drawSparkleStar(g, x, y, radius, color, alpha = 1) {
+            g.fillStyle(color, alpha);
+            g.beginPath();
+            g.moveTo(x, y - radius);
+            g.lineTo(x + radius * 0.28, y - radius * 0.28);
+            g.lineTo(x + radius, y);
+            g.lineTo(x + radius * 0.28, y + radius * 0.28);
+            g.lineTo(x, y + radius);
+            g.lineTo(x - radius * 0.28, y + radius * 0.28);
+            g.lineTo(x - radius, y);
+            g.lineTo(x - radius * 0.28, y - radius * 0.28);
+            g.closePath();
+            g.fillPath();
+        }
+
+        function renderShinyAugmentTile(scene, tile, pos, cellSize) {
+            const x = pos.left + 2;
+            const y = pos.top + 2;
+            const w = cellSize - 4;
+            const h = cellSize - 4;
+
+            const base = scene.add.graphics();
+
+            if (tile.tier === 'silver') {
+                base.fillGradientStyle(0xf8f9f9, 0xd5dbdb, 0xbdc3c7, 0xeaf2f8, 1);
+                base.fillRoundedRect(x, y, w, h, 7);
+
+                base.fillStyle(0xffffff, 0.55);
+                base.beginPath();
+                base.moveTo(x + w * 0.15, y);
+                base.lineTo(x + w * 0.45, y);
+                base.lineTo(x, y + h * 0.45);
+                base.lineTo(x, y + h * 0.15);
+                base.closePath();
+                base.fillPath();
+            } else if (tile.tier === 'gold') {
+                base.fillGradientStyle(0xfff59d, 0xfbc02d, 0xf57f17, 0xffe082, 1);
+                base.fillRoundedRect(x, y, w, h, 7);
+
+                base.fillStyle(0xffffff, 0.5);
+                base.beginPath();
+                base.moveTo(x + w * 0.2, y);
+                base.lineTo(x + w * 0.52, y);
+                base.lineTo(x, y + h * 0.52);
+                base.lineTo(x, y + h * 0.2);
+                base.closePath();
+                base.fillPath();
+            } else if (tile.tier === 'prism') {
+                base.fillGradientStyle(0xffb6d9, 0xff69b4, 0xf8bbd0, 0xd7bde2, 1);
+                base.fillRoundedRect(x, y, w, h, 7);
+
+                base.fillStyle(0xfff0f6, 0.65);
+                base.beginPath();
+                base.moveTo(x + w * 0.12, y);
+                base.lineTo(x + w * 0.48, y);
+                base.lineTo(x, y + h * 0.48);
+                base.lineTo(x, y + h * 0.12);
+                base.closePath();
+                base.fillPath();
+
+                base.fillStyle(0xe0f7fa, 0.45);
+                base.fillCircle(x + w * 0.78, y + h * 0.78, w * 0.18);
+            }
+
+            base.lineStyle(2.8, tile.border, 1);
+            base.strokeRoundedRect(x, y, w, h, 7);
+
+            const starColor = 0xffffff;
+            const spots = [
+                { sx: x + w * 0.22, sy: y + h * 0.22, r: 5.2, delay: 0 },
+                { sx: x + w * 0.80, sy: y + h * 0.26, r: 4.2, delay: 350 },
+                { sx: x + w * 0.76, sy: y + h * 0.80, r: 5.0, delay: 700 }
+            ];
+
+            spots.forEach((sp) => {
+                const star = scene.add.graphics();
+                drawSparkleStar(star, sp.sx, sp.sy, sp.r, starColor, 1);
+                star.setAlpha(0.25);
+
+                scene.tweens.add({
+                    targets: star,
+                    alpha: { from: 0.2, to: 1 },
+                    duration: 650,
+                    yoyo: true,
+                    repeat: -1,
+                    delay: sp.delay,
+                    ease: 'Sine.easeInOut'
+                });
+            });
+
+            scene.add.text(pos.centerX, pos.centerY, tile.label, {
+                fontFamily: 'Jua',
+                fontSize: '14px',
+                color: tile.textColor,
+                align: 'center',
+                lineHeight: 15,
+                stroke: '#ffffff',
+                strokeThickness: 2.5
+            }).setOrigin(0.5);
+        }
+
+        function drawLandmarkGraphic(scene, iconKey, cx, cy, scale = 1) {
+            const g = scene.add.graphics();
+            const s = (v) => v * scale;
+
+            switch (iconKey) {
+                case 'eiffel_tower':
+                    g.lineStyle(2.4 * scale, 0x8e44ad, 1);
+                    g.fillStyle(0xd35400, 1);
+                    g.fillTriangle(cx, cy - s(11.5), cx - s(8), cy + s(8.5), cx + s(8), cy + s(8.5));
+                    g.fillStyle(0xfef9e7, 1);
+                    g.fillTriangle(cx, cy - s(3), cx - s(3.2), cy + s(8.5), cx + s(3.2), cy + s(8.5));
+                    g.lineStyle(2 * scale, 0x922b21, 1);
+                    g.lineBetween(cx - s(5.2), cy + s(1), cx + s(5.2), cy + s(1));
+                    g.lineBetween(cx - s(6.8), cy + s(4.8), cx + s(6.8), cy + s(4.8));
+                    break;
+
+                case 'tokyo_tower':
+                    g.fillStyle(0xe74c3c, 1);
+                    g.fillTriangle(cx, cy - s(12), cx - s(8), cy + s(8.5), cx + s(8), cy + s(8.5));
+                    g.fillStyle(0xffffff, 1);
+                    g.fillRect(cx - s(4.8), cy - s(4.2), s(9.6), s(2.4));
+                    g.fillRect(cx - s(6.4), cy + s(2.2), s(12.8), s(2.4));
+                    break;
+
+                case 'liberty':
+                    g.fillStyle(0x16a085, 1);
+                    g.fillRect(cx - s(6), cy + s(3.2), s(12), s(5.3));
+                    g.fillRect(cx - s(3.2), cy - s(5.2), s(6.4), s(8.4));
+                    g.fillCircle(cx, cy - s(7.8), s(3));
+                    g.lineStyle(2 * scale, 0xf39c12, 1);
+                    g.lineBetween(cx + s(3.2), cy - s(4.2), cx + s(6.4), cy - s(10));
+                    g.fillStyle(0xf1c40f, 1);
+                    g.fillCircle(cx + s(6.4), cy - s(11), s(2.2));
+                    break;
+
+                case 'big_ben':
+                    g.fillStyle(0xb7950b, 1);
+                    g.fillRect(cx - s(4.3), cy - s(5.2), s(8.6), s(13.7));
+                    g.fillTriangle(cx, cy - s(12), cx - s(5.4), cy - s(5.2), cx + s(5.4), cy - s(5.2));
+                    g.fillStyle(0xffffff, 1);
+                    g.fillCircle(cx, cy - s(2), s(2.4));
+                    break;
+
+                case 'colosseum':
+                    g.fillStyle(0xd68910, 1);
+                    g.fillRoundedRect(cx - s(9), cy - s(5.2), s(18), s(13.7), s(2.8));
+                    g.fillStyle(0x5d4037, 1);
+                    g.fillRect(cx - s(6), cy - s(1.6), s(2.4), s(4.8));
+                    g.fillRect(cx - s(1.2), cy - s(1.6), s(2.4), s(4.8));
+                    g.fillRect(cx + s(3.6), cy - s(1.6), s(2.4), s(4.8));
+                    break;
+
+                case 'pyramid':
+                    g.fillStyle(0xf4d03f, 1);
+                    g.fillTriangle(cx - s(1), cy - s(10), cx - s(10.5), cy + s(8.5), cx + s(3.8), cy + s(8.5));
+                    g.fillStyle(0xd4ac0d, 1);
+                    g.fillTriangle(cx - s(1), cy - s(10), cx + s(3.8), cy + s(8.5), cx + s(10.5), cy + s(8.5));
+                    break;
+
+                case 'burj_spire':
+                    g.fillStyle(0x5dade2, 1);
+                    g.fillTriangle(cx, cy - s(12.5), cx - s(5.4), cy + s(8.5), cx + s(5.4), cy + s(8.5));
+                    g.lineStyle(1.8 * scale, 0x1b4f72, 1);
+                    g.lineBetween(cx, cy - s(12.5), cx, cy + s(8.5));
+                    break;
+
+                case 'mosque_dome':
+                    g.fillStyle(0x2980b9, 1);
+                    g.fillCircle(cx, cy - s(1.6), s(6.5));
+                    g.fillRect(cx - s(8), cy - s(1.6), s(16), s(10));
+                    g.fillRect(cx - s(10.2), cy - s(8), s(2.4), s(16.5));
+                    g.fillRect(cx + s(7.8), cy - s(8), s(2.4), s(16.5));
+                    break;
+
+                case 'opera_house':
+                    g.fillStyle(0xffffff, 1);
+                    g.fillTriangle(cx - s(9), cy + s(7), cx - s(3), cy - s(8.5), cx + s(1), cy + s(7));
+                    g.fillTriangle(cx - s(2.2), cy + s(7), cx + s(4), cy - s(6), cx + s(9), cy + s(7));
+                    g.lineStyle(1.6 * scale, 0x2980b9, 1);
+                    g.strokeTriangle(cx - s(9), cy + s(7), cx - s(3), cy - s(8.5), cx + s(1), cy + s(7));
+                    g.strokeTriangle(cx - s(2.2), cy + s(7), cx + s(4), cy - s(6), cx + s(9), cy + s(7));
+                    break;
+
+                case 'twin_towers':
+                    g.fillStyle(0x5499c7, 1);
+                    g.fillRect(cx - s(7.5), cy - s(8), s(4.8), s(16.5));
+                    g.fillRect(cx + s(2.7), cy - s(8), s(4.8), s(16.5));
+                    g.lineStyle(2 * scale, 0x1f618d, 1);
+                    g.lineBetween(cx - s(2.7), cy - s(0.5), cx + s(2.7), cy - s(0.5));
+                    break;
+
+                case 'taipei_101':
+                    g.fillStyle(0x2e86c1, 1);
+                    g.fillRect(cx - s(4.3), cy - s(10.5), s(8.6), s(19));
+                    g.lineStyle(1.6 * scale, 0xa9cce3, 1);
+                    g.lineBetween(cx - s(4.3), cy - s(4), cx + s(4.3), cy - s(4));
+                    g.lineBetween(cx - s(4.3), cy + s(2.2), cx + s(4.3), cy + s(2.2));
+                    break;
+
+                case 'marina_bay':
+                    g.fillStyle(0x566573, 1);
+                    g.fillRect(cx - s(7), cy - s(3.2), s(3), s(11.7));
+                    g.fillRect(cx - s(1.5), cy - s(3.2), s(3), s(11.7));
+                    g.fillRect(cx + s(4), cy - s(3.2), s(3), s(11.7));
+                    g.fillStyle(0x27ae60, 1);
+                    g.fillRoundedRect(cx - s(10.2), cy - s(7), s(20.4), s(3.8), s(2));
+                    break;
+
+                case 'palace_gate':
+                    g.fillStyle(0xc0392b, 1);
+                    g.fillRect(cx - s(8), cy - s(2.6), s(16), s(11.1));
+                    g.fillStyle(0xf1c40f, 1);
+                    g.fillTriangle(cx, cy - s(10), cx - s(9.6), cy - s(2.6), cx + s(9.6), cy - s(2.6));
+                    g.fillStyle(0x2c3e50, 1);
+                    g.fillRect(cx - s(2.4), cy + s(2.6), s(4.8), s(5.9));
+                    break;
+
+                case 'sagrada':
+                    g.fillStyle(0xd35400, 1);
+                    g.fillTriangle(cx - s(5.8), cy - s(10.5), cx - s(8.5), cy + s(8.5), cx - s(3), cy + s(8.5));
+                    g.fillTriangle(cx + s(5.8), cy - s(10.5), cx + s(3), cy + s(8.5), cx + s(8.5), cy + s(8.5));
+                    g.fillRect(cx - s(2.8), cy - s(4.2), s(5.6), s(12.7));
+                    break;
+
+                case 'royal_palace':
+                    g.fillStyle(0xf5cba7, 1);
+                    g.fillRect(cx - s(9), cy - s(3.2), s(18), s(11.7));
+                    g.fillStyle(0xc0392b, 1);
+                    g.fillTriangle(cx, cy - s(10), cx - s(6), cy - s(3.2), cx + s(6), cy - s(3.2));
+                    break;
+
+                case 'christ_statue':
+                    g.fillStyle(0xecf0f1, 1);
+                    g.fillRect(cx - s(2.4), cy - s(6.5), s(4.8), s(15));
+                    g.lineStyle(2.8 * scale, 0xecf0f1, 1);
+                    g.lineBetween(cx - s(9.2), cy - s(3.8), cx + s(9.2), cy - s(3.8));
+                    g.fillCircle(cx, cy - s(8.6), s(2.4));
+                    break;
+
+                case 'aztec_step':
+                    g.fillStyle(0x27ae60, 1);
+                    g.fillRect(cx - s(9.8), cy + s(4.2), s(19.6), s(4.3));
+                    g.fillRect(cx - s(7.6), cy, s(15.2), s(4.2));
+                    g.fillRect(cx - s(5.2), cy - s(4.2), s(10.4), s(4.2));
+                    g.fillRect(cx - s(2.6), cy - s(8), s(5.2), s(3.8));
+                    break;
+
+                case 'wat_arun':
+                    g.fillStyle(0xf8c471, 1);
+                    g.fillTriangle(cx, cy - s(12), cx - s(7.5), cy + s(8.5), cx + s(7.5), cy + s(8.5));
+                    g.fillStyle(0xe67e22, 1);
+                    g.fillCircle(cx, cy - s(1.6), s(2.8));
+                    break;
+
+                case 'halong_rock':
+                    g.fillStyle(0x1e8449, 1);
+                    g.fillTriangle(cx - s(6), cy - s(9), cx - s(9.6), cy + s(8.5), cx - s(1.2), cy + s(8.5));
+                    g.fillTriangle(cx + s(5), cy - s(6.5), cx + s(1.2), cy + s(8.5), cx + s(9.6), cy + s(8.5));
+                    break;
+
+                case 'fort_arch':
+                    g.fillStyle(0xca6f1e, 1);
+                    g.fillRect(cx - s(8.6), cy - s(5.2), s(17.2), s(13.7));
+                    g.fillStyle(0xfdebd0, 1);
+                    g.fillCircle(cx, cy + s(2.8), s(3.8));
+                    g.fillRect(cx - s(3.8), cy + s(2.8), s(7.6), s(5.7));
+                    break;
+
+                case 'monas_tower':
+                    g.fillStyle(0xbdc3c7, 1);
+                    g.fillRect(cx - s(2.8), cy - s(7), s(5.6), s(15.5));
+                    g.fillStyle(0xf1c40f, 1);
+                    g.fillCircle(cx, cy - s(9.6), s(2.8));
+                    break;
+
+                case 'peak_tower':
+                default:
+                    g.fillStyle(0x8e44ad, 1);
+                    g.fillTriangle(cx, cy - s(11.5), cx - s(8), cy + s(8.5), cx + s(8), cy + s(8.5));
+                    g.fillStyle(0xf5eef8, 1);
+                    g.fillCircle(cx, cy - s(1), s(2.8));
+                    break;
+            }
+        }
+
+        class ChaosBoardScene extends Phaser.Scene {
+            constructor() {
+                super({ key: 'ChaosBoardScene' });
+            }
+
+            create() {
+                const size = this.scale.width;
+                const padding = 12;
+                const boardSize = size - padding * 2;
+                const cellSize = boardSize / 9;
+
+                // 외곽 프레임
+                const bg = this.add.graphics();
+                bg.fillStyle(0xfffaf0, 1);
+                bg.fillRoundedRect(padding - 6, padding - 6, boardSize + 12, boardSize + 12, 16);
+                bg.lineStyle(3.5, 0xf39c12, 1);
+                bg.strokeRoundedRect(padding - 6, padding - 6, boardSize + 12, boardSize + 12, 16);
+
+                // 중앙 7x7 영역 (빈 공간 최소화를 위해 여백 축소)
+                const innerX = padding + cellSize;
+                const innerY = padding + cellSize;
+                const innerSize = cellSize * 7;
+                const centerBg = this.add.graphics();
+                centerBg.fillStyle(0xe8f8f5, 0.94);
+                centerBg.fillRoundedRect(innerX + 2, innerY + 2, innerSize - 4, innerSize - 4, 12);
+                centerBg.lineStyle(2, 0xa3e4d7, 1);
+                centerBg.strokeRoundedRect(innerX + 2, innerY + 2, innerSize - 4, innerSize - 4, 12);
+
+                this.add.text(size / 2, size / 2 - 16, 'CHAOS MARBLE', {
+                    fontFamily: 'Jua',
+                    fontSize: '36px',
+                    color: '#16a085'
+                }).setOrigin(0.5);
+
+                this.add.text(size / 2, size / 2 + 18, '도파민 폭발 파티 보드게임', {
+                    fontFamily: 'Jua',
+                    fontSize: '18px',
+                    color: '#566573'
+                }).setOrigin(0.5);
+
+                const toPixel = (x, y) => {
+                    const col = 8 - x;
+                    const row = 8 - y;
+                    return {
+                        left: padding + col * cellSize,
+                        top: padding + row * cellSize,
+                        centerX: padding + (col + 0.5) * cellSize,
+                        centerY: padding + (row + 0.5) * cellSize
+                    };
+                };
+
+                const iconScale = Math.max(1.0, cellSize / 62);
+                const tiles = buildOuterTiles32();
+
+                tiles.forEach((tile) => {
+                    const pos = toPixel(tile.x, tile.y);
+                    const isCorner = tile.type === 'corner';
+                    const isAugment = tile.type === 'augment';
+                    const isProperty = tile.type === 'property';
+
+                    if (isAugment) {
+                        renderShinyAugmentTile(this, tile, pos, cellSize);
+                        return;
+                    }
+
+                    const g = this.add.graphics();
+                    g.fillStyle(tile.color, 1);
+                    g.fillRoundedRect(pos.left + 1.5, pos.top + 1.5, cellSize - 3, cellSize - 3, isCorner ? 9 : 6);
+                    g.lineStyle(isCorner ? 3.2 : isProperty ? 2.2 : 1.6, tile.border, 1);
+                    g.strokeRoundedRect(pos.left + 1.5, pos.top + 1.5, cellSize - 3, cellSize - 3, isCorner ? 9 : 6);
+
+                    if (isCorner) {
+                        if (tile.cornerKey === 'start') {
+                            this.add.text(pos.centerX, pos.centerY - 5, tile.label, {
+                                fontFamily: 'Jua',
+                                fontSize: '20px',
+                                color: '#ffffff',
+                                align: 'center',
+                                stroke: '#2c3e50',
+                                strokeThickness: 3.5
+                            }).setOrigin(0.5);
+
+                            drawStartLeftArrow(this, pos.centerX, pos.top + cellSize * 0.77, cellSize);
+                        } else {
+                            drawCornerGraphic(this, tile.cornerKey, pos.centerX, pos.top + cellSize * 0.42, cellSize);
+
+                            const labelColor = tile.cornerKey === 'roulette' ? '#ffffff' : '#2c3e50';
+                            const strokeColor = tile.cornerKey === 'roulette' ? '#2c3e50' : '#ffffff';
+
+                            this.add.text(pos.centerX, pos.top + cellSize * 0.82, tile.label, {
+                                fontFamily: 'Jua',
+                                fontSize: '10.5px',
+                                color: labelColor,
+                                align: 'center',
+                                stroke: strokeColor,
+                                strokeThickness: 2
+                            }).setOrigin(0.5);
+                        }
+                    } else if (isProperty) {
+                        drawLandmarkGraphic(this, tile.icon, pos.centerX, pos.top + cellSize * 0.24, iconScale);
+
+                        this.add.text(pos.centerX, pos.top + cellSize * 0.48, tile.landmark, {
+                            fontFamily: 'Jua',
+                            fontSize: '9.5px',
+                            color: '#34495e'
+                        }).setOrigin(0.5);
+
+                        this.add.text(pos.centerX, pos.top + cellSize * 0.69, tile.city, {
+                            fontFamily: 'Jua',
+                            fontSize: '14.5px',
+                            color: '#1f2d3d'
+                        }).setOrigin(0.5);
+
+                        this.add.text(pos.centerX, pos.top + cellSize * 0.88, `${tile.price}만`, {
+                            fontFamily: 'Jua',
+                            fontSize: '10.5px',
+                            color: '#7f8c8d'
+                        }).setOrigin(0.5);
+                    }
+                });
+            }
+        }
+
+        // 좌측(296px) 및 우측(328px) 패널 영역을 절대 침범하지 않도록 중앙 스테이지 실측 크기로 보드 크기 결정
+        function computeSafeBoardSize() {
+            const stageEl = document.getElementById('board-center-stage');
+            const rect = stageEl ? stageEl.getBoundingClientRect() : null;
+            const stageW = rect && rect.width > 0 ? rect.width : (window.innerWidth - 296 - 328 - 44);
+            const stageH = rect && rect.height > 0 ? rect.height : (window.innerHeight - 52 - 20);
+            const borderAllowance = 14; // 컨테이너 테두리 및 그림자 여백
+            return Math.max(420, Math.floor(Math.min(stageW, stageH) - borderAllowance));
+        }
+
+        const canvasSize = computeSafeBoardSize();
+
+        const phaserGame = new Phaser.Game({
+            type: Phaser.AUTO,
+            width: canvasSize,
+            height: canvasSize,
+            parent: 'phaser-game-container',
+            backgroundColor: '#f2ffc2',
+            scene: [ChaosBoardScene]
+        });
+
+        window.addEventListener('resize', () => {
+            const nextSize = computeSafeBoardSize();
+            if (phaserGame && phaserGame.scale && Math.abs(phaserGame.scale.width - nextSize) >= 4) {
+                phaserGame.scale.resize(nextSize, nextSize);
+                phaserGame.scene.getScene('ChaosBoardScene').scene.restart();
+            }
+        });
+    </script>
+</body>
+</html>
